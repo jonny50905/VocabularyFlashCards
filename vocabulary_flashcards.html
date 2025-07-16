@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英文單字卡片複習</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #4a5568;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .progress {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .card {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 15px;
+            padding: 40px;
+            margin: 30px 0;
+            min-height: 250px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+        }
+
+        .english-word {
+            font-size: 3em;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .pronunciation-btn {
+            background: linear-gradient(45deg, #4299e1, #3182ce);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 15px 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(66, 153, 225, 0.3);
+        }
+
+        .pronunciation-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(66, 153, 225, 0.4);
+        }
+
+        .chinese-answer {
+            background: #fed7d7;
+            border: 2px dashed #fc8181;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chinese-answer.hidden {
+            background: #e2e8f0;
+            border-color: #a0aec0;
+            color: #4a5568;
+        }
+
+        .chinese-answer.hidden::before {
+            content: "點擊查看中文意思";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.1em;
+            color: #4a5568;
+        }
+
+        .chinese-answer.hidden .chinese-text {
+            opacity: 0;
+        }
+
+        .chinese-text {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #c53030;
+            transition: opacity 0.3s ease;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #48bb78, #38a169);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
+        }
+
+        .btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            padding: 20px;
+            background: #edf2f7;
+            border-radius: 10px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .english-word {
+                font-size: 2.5em;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .btn {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 英文單字複習</h1>
+            <div class="progress">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="english-word" id="englishWord">準備開始</div>
+            <button class="pronunciation-btn" id="pronunciationBtn" onclick="speakWord()">🔊 發音</button>
+            <div class="chinese-answer hidden" id="chineseAnswer" onclick="revealAnswer()">
+                <div class="chinese-text" id="chineseText">中文意思</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn" id="nextBtn" onclick="nextWord()">下一題</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number" id="currentNumber">0</div>
+                <div class="stat-label">目前題號</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="totalWords">25</div>
+                <div class="stat-label">總題數</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="completedWords">0</div>
+                <div class="stat-label">已完成</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const vocabulary = [
+            { english: "eligible", chinese: "有資格的" },
+            { english: "associate", chinese: "使有關連" },
+            { english: "lack", chinese: "缺乏" },
+            { english: "managerial", chinese: "管理的" },
+            { english: "diligent", chinese: "勤奮的" },
+            { english: "familiar", chinese: "熟悉" },
+            { english: "proficiency", chinese: "熟練精通" },
+            { english: "prospective", chinese: "預期的" },
+            { english: "appeal", chinese: "呼籲,有吸引力" },
+            { english: "specialize", chinese: "專攻,專門從事" },
+            { english: "apprehensive", chinese: "憂慮擔心" },
+            { english: "entitle", chinese: "給某人權力" },
+            { english: "degree", chinese: "學位" },
+            { english: "payroll", chinese: "發薪名單" },
+            { english: "occupation", chinese: "職業" },
+            { english: "wage", chinese: "薪水" },
+            { english: "confidence", chinese: "信心" },
+            { english: "achievement", chinese: "成就,達成" },
+            { english: "impressed", chinese: "印象" },
+            { english: "proficient", chinese: "精通" },
+            { english: "apply", chinese: "申請採用" },
+            { english: "attitude", chinese: "態度" },
+            { english: "profitable", chinese: "有利的" }
+        ];
+
+        let currentIndex = 0;
+        let shuffledVocabulary = [];
+        let completedCount = 0;
+
+        function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function initializeQuiz() {
+            shuffledVocabulary = shuffleArray(vocabulary);
+            currentIndex = 0;
+            completedCount = 0;
+            document.getElementById('totalWords').textContent = shuffledVocabulary.length;
+            showCurrentWord();
+        }
+
+        function showCurrentWord() {
+            if (currentIndex >= shuffledVocabulary.length) {
+                // 重新開始
+                currentIndex = 0;
+                shuffledVocabulary = shuffleArray(vocabulary);
+            }
+
+            const currentWord = shuffledVocabulary[currentIndex];
+            document.getElementById('englishWord').textContent = currentWord.english;
+            document.getElementById('chineseText').textContent = currentWord.chinese;
+            
+            // 重置中文答案為隱藏狀態
+            const chineseAnswer = document.getElementById('chineseAnswer');
+            chineseAnswer.classList.add('hidden');
+            
+            // 更新統計
+            document.getElementById('currentNumber').textContent = currentIndex + 1;
+            document.getElementById('completedWords').textContent = completedCount;
+            
+            // 更新進度條
+            const progress = ((currentIndex + 1) / shuffledVocabulary.length) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        function speakWord() {
+            const currentWord = shuffledVocabulary[currentIndex];
+            if (currentWord && 'speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(currentWord.english);
+                utterance.lang = 'en-US';
+                utterance.rate = 0.8;
+                utterance.pitch = 1;
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        function revealAnswer() {
+            const chineseAnswer = document.getElementById('chineseAnswer');
+            chineseAnswer.classList.remove('hidden');
+        }
+
+        function nextWord() {
+            completedCount++;
+            currentIndex++;
+            showCurrentWord();
+        }
+
+        // 初始化測驗
+        initializeQuiz();
+
+        // 鍵盤快捷鍵
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                speakWord();
+            } else if (event.code === 'Enter') {
+                event.preventDefault();
+                const chineseAnswer = document.getElementById('chineseAnswer');
+                if (chineseAnswer.classList.contains('hidden')) {
+                    revealAnswer();
+                } else {
+                    nextWord();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
