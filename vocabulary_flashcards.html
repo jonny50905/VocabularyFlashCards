@@ -171,6 +171,40 @@
             box-shadow: none;
         }
 
+        .answer-btn {
+            border: none;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            font-size: 2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0 15px;
+        }
+
+        .correct-btn {
+            background: linear-gradient(45deg, #48bb78, #38a169);
+            color: white;
+            box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);
+        }
+
+        .correct-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
+        }
+
+        .incorrect-btn {
+            background: linear-gradient(45deg, #e53e3e, #c53030);
+            color: white;
+            box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+        }
+
+        .incorrect-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(229, 62, 62, 0.4);
+        }
+
         .upload-section {
             background: #f0fff4;
             border: 2px dashed #48bb78;
@@ -344,7 +378,8 @@
         </div>
 
         <div class="controls">
-            <button class="btn" id="nextBtn" onclick="nextWord()">下一題</button>
+            <button class="answer-btn correct-btn" id="correctBtn" onclick="markAnswer(true)">O</button>
+            <button class="answer-btn incorrect-btn" id="incorrectBtn" onclick="markAnswer(false)">X</button>
         </div>
 
         <div class="stats">
@@ -396,6 +431,7 @@
         let currentIndex = 0;
         let shuffledVocabulary = [];
         let completedCount = 0;
+        let incorrectWords = []; // Track words marked as incorrect
 
         function handleFileUpload(event) {
             const file = event.target.files[0];
@@ -537,15 +573,30 @@
             shuffledVocabulary = shuffleArray(vocabulary);
             currentIndex = 0;
             completedCount = 0;
+            incorrectWords = []; // Reset incorrect words for new quiz
             document.getElementById('totalWords').textContent = shuffledVocabulary.length;
             showCurrentWord();
         }
 
         function showCurrentWord() {
             if (currentIndex >= shuffledVocabulary.length) {
-                // 重新開始
+                // Round completed - reorganize vocabulary with incorrect words first
+                if (incorrectWords.length > 0) {
+                    // Create new shuffled array with incorrect words at the beginning
+                    const correctWords = vocabulary.filter(word => 
+                        !incorrectWords.some(incorrect => 
+                            incorrect.english === word.english && incorrect.chinese === word.chinese
+                        )
+                    );
+                    const shuffledCorrect = shuffleArray(correctWords);
+                    const shuffledIncorrect = shuffleArray(incorrectWords);
+                    shuffledVocabulary = [...shuffledIncorrect, ...shuffledCorrect];
+                    incorrectWords = []; // Reset for next round
+                } else {
+                    // No incorrect words, just reshuffle all
+                    shuffledVocabulary = shuffleArray(vocabulary);
+                }
                 currentIndex = 0;
-                shuffledVocabulary = shuffleArray(vocabulary);
             }
 
             const currentWord = shuffledVocabulary[currentIndex];
@@ -581,6 +632,24 @@
             chineseAnswer.classList.remove('hidden');
         }
 
+        function markAnswer(isCorrect) {
+            const currentWord = shuffledVocabulary[currentIndex];
+            
+            // If marked as incorrect, add to incorrectWords array
+            if (!isCorrect) {
+                // Check if word is not already in incorrectWords
+                const alreadyExists = incorrectWords.some(word => 
+                    word.english === currentWord.english && word.chinese === currentWord.chinese
+                );
+                if (!alreadyExists) {
+                    incorrectWords.push({...currentWord});
+                }
+            }
+            
+            // Move to next word
+            nextWord();
+        }
+
         function nextWord() {
             completedCount++;
             currentIndex++;
@@ -600,9 +669,13 @@
                 const chineseAnswer = document.getElementById('chineseAnswer');
                 if (chineseAnswer.classList.contains('hidden')) {
                     revealAnswer();
-                } else {
-                    nextWord();
                 }
+            } else if (event.code === 'KeyO') {
+                event.preventDefault();
+                markAnswer(true); // O for correct
+            } else if (event.code === 'KeyX') {
+                event.preventDefault();
+                markAnswer(false); // X for incorrect
             }
         });
     </script>
