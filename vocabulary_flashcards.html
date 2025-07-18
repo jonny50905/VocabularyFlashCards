@@ -395,6 +395,14 @@
                 <div class="stat-number" id="completedWords">0</div>
                 <div class="stat-label">已完成</div>
             </div>
+            <div class="stat">
+                <div class="stat-number" id="correctCount">0</div>
+                <div class="stat-label">答對</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="incorrectCount">0</div>
+                <div class="stat-label">答錯</div>
+            </div>
         </div>
     </div>
 
@@ -432,6 +440,8 @@
         let shuffledVocabulary = [];
         let completedCount = 0;
         let incorrectWords = []; // Track words marked as incorrect
+        let correctCount = 0; // Track correct answers
+        let incorrectCount = 0; // Track incorrect answers
 
         function handleFileUpload(event) {
             const file = event.target.files[0];
@@ -573,6 +583,8 @@
             shuffledVocabulary = shuffleArray(vocabulary);
             currentIndex = 0;
             completedCount = 0;
+            correctCount = 0; // Reset correct count
+            incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
             document.getElementById('totalWords').textContent = shuffledVocabulary.length;
             showCurrentWord();
@@ -610,6 +622,8 @@
             // 更新統計
             document.getElementById('currentNumber').textContent = currentIndex + 1;
             document.getElementById('completedWords').textContent = completedCount;
+            document.getElementById('correctCount').textContent = correctCount;
+            document.getElementById('incorrectCount').textContent = incorrectCount;
             
             // 更新進度條
             const progress = ((currentIndex + 1) / shuffledVocabulary.length) * 100;
@@ -635,8 +649,12 @@
         function markAnswer(isCorrect) {
             const currentWord = shuffledVocabulary[currentIndex];
             
-            // If marked as incorrect, add to incorrectWords array
-            if (!isCorrect) {
+            // Increment correct or incorrect counter
+            if (isCorrect) {
+                correctCount++;
+            } else {
+                incorrectCount++;
+                // If marked as incorrect, add to incorrectWords array
                 // Check if word is not already in incorrectWords
                 const alreadyExists = incorrectWords.some(word => 
                     word.english === currentWord.english && word.chinese === currentWord.chinese
