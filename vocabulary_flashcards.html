@@ -63,6 +63,27 @@
             box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
         }
 
+        .download-btn {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: linear-gradient(45deg, #4299e1, #3182ce);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(66, 153, 225, 0.3);
+            z-index: 1000;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(66, 153, 225, 0.4);
+        }
+
         .progress {
             background: #e2e8f0;
             border-radius: 10px;
@@ -280,6 +301,7 @@
             cursor: pointer;
             color: #4a5568;
             transition: color 0.3s ease;
+            z-index: 1002;
         }
 
         .close-btn:hover {
@@ -409,6 +431,7 @@
     <div class="container">
         <div class="header">
             <button class="hamburger-menu" id="hamburgerBtn" onclick="toggleUploadSection()">☰</button>
+            <button class="download-btn" id="downloadBtn" onclick="downloadCSV()" title="下載統計CSV">📥</button>
             <h1>📚 英文單字複習</h1>
             <div class="progress">
                 <div class="progress-bar" id="progressBar"></div>
@@ -436,14 +459,6 @@
                 eligible,"有資格的"<br>
                 associate,"使有關連"<br>
                 lack,"缺乏"
-            </div>
-            
-            <div style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
-                <h4 style="color: #2d3748; margin-bottom: 10px;">📊 下載學習統計</h4>
-                <p style="font-size: 0.9em; color: #4a5568; margin-bottom: 15px;">下載包含答題統計的CSV檔案</p>
-                <button onclick="downloadCSV()" class="file-input-label" style="background: linear-gradient(45deg, #4299e1, #3182ce);">
-                    📥 下載統計CSV
-                </button>
             </div>
         </div>
 
@@ -539,8 +554,12 @@
                 csvContent += `${word.english},${escapedChinese},${stats.incorrect},${stats.correct}\n`;
             });
             
-            // Create and download the file
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            // Add UTF-8 BOM for proper encoding
+            const BOM = '\uFEFF';
+            const csvWithBOM = BOM + csvContent;
+            
+            // Create and download the file with UTF-8-BOM encoding
+            const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
