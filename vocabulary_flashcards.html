@@ -63,6 +63,27 @@
             box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
         }
 
+        .download-btn {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: linear-gradient(45deg, #4299e1, #3182ce);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(66, 153, 225, 0.3);
+            z-index: 1000;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(66, 153, 225, 0.4);
+        }
+
         .progress {
             background: #e2e8f0;
             border-radius: 10px;
@@ -280,6 +301,7 @@
             cursor: pointer;
             color: #4a5568;
             transition: color 0.3s ease;
+            z-index: 1002;
         }
 
         .close-btn:hover {
@@ -409,6 +431,7 @@
     <div class="container">
         <div class="header">
             <button class="hamburger-menu" id="hamburgerBtn" onclick="toggleUploadSection()">☰</button>
+            <button class="download-btn" id="downloadBtn" onclick="downloadCSV()" title="下載統計CSV">📥</button>
             <h1>📚 英文單字複習</h1>
             <div class="progress">
                 <div class="progress-bar" id="progressBar"></div>
@@ -512,6 +535,54 @@
         let incorrectWords = []; // Track words marked as incorrect
         let correctCount = 0; // Track correct answers
         let incorrectCount = 0; // Track incorrect answers
+        let wordStats = {}; // Track per-word statistics: {wordKey: {correct: 0, incorrect: 0}}
+
+        function downloadCSV() {
+            // Generate CSV content with word statistics
+            const headers = '英文,中文,錯誤次數,正確次數\n';
+            let csvContent = headers;
+            
+            vocabulary.forEach(word => {
+                const wordKey = generateWordKey(word);
+                const stats = wordStats[wordKey] || { correct: 0, incorrect: 0 };
+                
+                // Escape commas and quotes in the Chinese text
+                const escapedChinese = word.chinese.includes(',') || word.chinese.includes('"') 
+                    ? `"${word.chinese.replace(/"/g, '""')}"` 
+                    : word.chinese;
+                
+                csvContent += `${word.english},${escapedChinese},${stats.incorrect},${stats.correct}\n`;
+            });
+            
+            // Add UTF-8 BOM for proper encoding
+            const BOM = '\uFEFF';
+            const csvWithBOM = BOM + csvContent;
+            
+            // Create and download the file with UTF-8-BOM encoding
+            const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '英文單字統計.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function generateWordKey(word) {
+            return `${word.english}|${word.chinese}`;
+        }
+
+        function initializeWordStats() {
+            wordStats = {};
+            vocabulary.forEach(word => {
+                const wordKey = generateWordKey(word);
+                if (!wordStats[wordKey]) {
+                    wordStats[wordKey] = { correct: 0, incorrect: 0 };
+                }
+            });
+        }
 
         function toggleUploadSection() {
             const uploadSection = document.getElementById('uploadSection');
@@ -681,6 +752,7 @@
             correctCount = 0; // Reset correct count
             incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
+            initializeWordStats(); // Initialize per-word statistics
             document.getElementById('totalWords').textContent = shuffledVocabulary.length;
             showCurrentWord();
         }
@@ -749,12 +821,20 @@
             }
             
             const currentWord = shuffledVocabulary[currentIndex];
+            const wordKey = generateWordKey(currentWord);
+            
+            // Update per-word statistics
+            if (!wordStats[wordKey]) {
+                wordStats[wordKey] = { correct: 0, incorrect: 0 };
+            }
             
             // Increment correct or incorrect counter
             if (isCorrect) {
                 correctCount++;
+                wordStats[wordKey].correct++;
             } else {
                 incorrectCount++;
+                wordStats[wordKey].incorrect++;
                 // If marked as incorrect, add to incorrectWords array
                 // Check if word is not already in incorrectWords
                 const alreadyExists = incorrectWords.some(word => 
