@@ -33,12 +33,34 @@
 
         .header {
             margin-bottom: 30px;
+            position: relative;
         }
 
         .header h1 {
             color: #4a5568;
             font-size: 2.5em;
             margin-bottom: 10px;
+        }
+
+        .hamburger-menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: linear-gradient(45deg, #48bb78, #38a169);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);
+            z-index: 1001;
+        }
+
+        .hamburger-menu:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
         }
 
         .progress {
@@ -213,11 +235,55 @@
             margin: 20px 0;
             text-align: center;
             transition: all 0.3s ease;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 500px;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+
+        .upload-section.show {
+            display: block;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .modal-overlay.show {
+            display: block;
         }
 
         .upload-section:hover {
             background: #e6fffa;
             border-color: #38a169;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #4a5568;
+            transition: color 0.3s ease;
+        }
+
+        .close-btn:hover {
+            color: #c53030;
         }
 
         .upload-section h3 {
@@ -338,15 +404,19 @@
     </style>
 </head>
 <body>
+    <div class="modal-overlay" id="modalOverlay" onclick="toggleUploadSection()"></div>
+    
     <div class="container">
         <div class="header">
+            <button class="hamburger-menu" id="hamburgerBtn" onclick="toggleUploadSection()">☰</button>
             <h1>📚 英文單字複習</h1>
             <div class="progress">
                 <div class="progress-bar" id="progressBar"></div>
             </div>
         </div>
 
-        <div class="upload-section">
+        <div class="upload-section" id="uploadSection">
+            <button class="close-btn" onclick="toggleUploadSection()">×</button>
             <h3>📁 上傳單字CSV檔案</h3>
             <p>選擇您的單字CSV檔案來載入自訂單字表</p>
             
@@ -433,6 +503,26 @@
         let completedCount = 0;
         let incorrectWords = []; // Track words marked as incorrect
 
+        function toggleUploadSection() {
+            const uploadSection = document.getElementById('uploadSection');
+            const modalOverlay = document.getElementById('modalOverlay');
+            
+            if (uploadSection.classList.contains('show')) {
+                uploadSection.classList.remove('show');
+                modalOverlay.classList.remove('show');
+            } else {
+                uploadSection.classList.add('show');
+                modalOverlay.classList.add('show');
+            }
+        }
+
+        function closeUploadSection() {
+            const uploadSection = document.getElementById('uploadSection');
+            const modalOverlay = document.getElementById('modalOverlay');
+            uploadSection.classList.remove('show');
+            modalOverlay.classList.remove('show');
+        }
+
         function handleFileUpload(event) {
             const file = event.target.files[0];
             const fileStatus = document.getElementById('fileStatus');
@@ -474,6 +564,11 @@
                     
                     showSuccess(`成功載入 ${vocabulary.length} 個單字！`);
                     fileStatus.textContent = `已載入: ${file.name} (${vocabulary.length} 個單字)`;
+                    
+                    // Auto-close upload section after successful upload
+                    setTimeout(() => {
+                        closeUploadSection();
+                    }, 1500); // Close after 1.5 seconds to let user see success message
                     
                 } catch (error) {
                     showError('CSV檔案格式錯誤: ' + error.message);
@@ -633,6 +728,12 @@
         }
 
         function markAnswer(isCorrect) {
+            // Auto-close upload section if it's open when starting to answer
+            const uploadSection = document.getElementById('uploadSection');
+            if (uploadSection.classList.contains('show')) {
+                closeUploadSection();
+            }
+            
             const currentWord = shuffledVocabulary[currentIndex];
             
             // If marked as incorrect, add to incorrectWords array
