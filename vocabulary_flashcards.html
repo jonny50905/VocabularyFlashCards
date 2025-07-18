@@ -437,6 +437,14 @@
                 associate,"使有關連"<br>
                 lack,"缺乏"
             </div>
+            
+            <div style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+                <h4 style="color: #2d3748; margin-bottom: 10px;">📊 下載學習統計</h4>
+                <p style="font-size: 0.9em; color: #4a5568; margin-bottom: 15px;">下載包含答題統計的CSV檔案</p>
+                <button onclick="downloadCSV()" class="file-input-label" style="background: linear-gradient(45deg, #4299e1, #3182ce);">
+                    📥 下載統計CSV
+                </button>
+            </div>
         </div>
 
         <div class="card">
@@ -512,6 +520,50 @@
         let incorrectWords = []; // Track words marked as incorrect
         let correctCount = 0; // Track correct answers
         let incorrectCount = 0; // Track incorrect answers
+        let wordStats = {}; // Track per-word statistics: {wordKey: {correct: 0, incorrect: 0}}
+
+        function downloadCSV() {
+            // Generate CSV content with word statistics
+            const headers = '英文,中文,錯誤次數,正確次數\n';
+            let csvContent = headers;
+            
+            vocabulary.forEach(word => {
+                const wordKey = generateWordKey(word);
+                const stats = wordStats[wordKey] || { correct: 0, incorrect: 0 };
+                
+                // Escape commas and quotes in the Chinese text
+                const escapedChinese = word.chinese.includes(',') || word.chinese.includes('"') 
+                    ? `"${word.chinese.replace(/"/g, '""')}"` 
+                    : word.chinese;
+                
+                csvContent += `${word.english},${escapedChinese},${stats.incorrect},${stats.correct}\n`;
+            });
+            
+            // Create and download the file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '英文單字統計.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function generateWordKey(word) {
+            return `${word.english}|${word.chinese}`;
+        }
+
+        function initializeWordStats() {
+            wordStats = {};
+            vocabulary.forEach(word => {
+                const wordKey = generateWordKey(word);
+                if (!wordStats[wordKey]) {
+                    wordStats[wordKey] = { correct: 0, incorrect: 0 };
+                }
+            });
+        }
 
         function toggleUploadSection() {
             const uploadSection = document.getElementById('uploadSection');
@@ -681,6 +733,7 @@
             correctCount = 0; // Reset correct count
             incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
+            initializeWordStats(); // Initialize per-word statistics
             document.getElementById('totalWords').textContent = shuffledVocabulary.length;
             showCurrentWord();
         }
@@ -749,12 +802,20 @@
             }
             
             const currentWord = shuffledVocabulary[currentIndex];
+            const wordKey = generateWordKey(currentWord);
+            
+            // Update per-word statistics
+            if (!wordStats[wordKey]) {
+                wordStats[wordKey] = { correct: 0, incorrect: 0 };
+            }
             
             // Increment correct or incorrect counter
             if (isCorrect) {
                 correctCount++;
+                wordStats[wordKey].correct++;
             } else {
                 incorrectCount++;
+                wordStats[wordKey].incorrect++;
                 // If marked as incorrect, add to incorrectWords array
                 // Check if word is not already in incorrectWords
                 const alreadyExists = incorrectWords.some(word => 
