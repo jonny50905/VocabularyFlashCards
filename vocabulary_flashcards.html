@@ -537,6 +537,8 @@
         let incorrectCount = 0; // Track incorrect answers
         let wordStats = {}; // Track per-word statistics: {wordKey: {correct: 0, incorrect: 0}}
         let roundCounter = 0; // Track which round we're in for frequency control
+        let consecutiveErrorWords = 0; // Track consecutive error words shown
+        let wordSelectionQueue = []; // Queue for word selection based on new rules
 
         function downloadCSV() {
             // Generate CSV content with word statistics
@@ -575,19 +577,93 @@
             return `${word.english}|${word.chinese}`;
         }
 
-        function shouldIncludeWordInRound(word, round) {
+        function calculateEffectiveErrorCount(word) {
             const wordKey = generateWordKey(word);
             const stats = wordStats[wordKey] || { correct: 0, incorrect: 0 };
+            return Math.max(0, stats.incorrect - stats.correct);
+        }
+
+        function hasAnyStatistics() {
+            return Object.values(wordStats).some(stats => stats.correct > 0 || stats.incorrect > 0);
+        }
+
+        function categorizeWords() {
+            const errorWords = [];
+            const correctWords = [];
             
-            // If word has been correct more than 2 times, include it only every other round
-            if (stats.correct > 2) {
-                // Include word in even rounds (0, 2, 4, ...) only
-                return round % 2 === 0;
+            vocabulary.forEach(word => {
+                const effectiveErrorCount = calculateEffectiveErrorCount(word);
+                if (effectiveErrorCount > 0) {
+                    errorWords.push({
+                        word: word,
+                        errorCount: effectiveErrorCount
+                    });
+                } else {
+                    correctWords.push(word);
+                }
+            });
+            
+            return { errorWords, correctWords };
+        }
+
+        function createWeightedWordList() {
+            const { errorWords, correctWords } = categorizeWords();
+            let weightedList = [];
+            
+            // Add error words with weight based on error count
+            errorWords.forEach(({ word, errorCount }) => {
+                // Add word multiple times based on error count for higher frequency
+                for (let i = 0; i < errorCount; i++) {
+                    weightedList.push({ word, isErrorWord: true });
+                }
+            });
+            
+            // Add correct words once each
+            correctWords.forEach(word => {
+                weightedList.push({ word, isErrorWord: false });
+            });
+            
+            return { weightedList, errorWords, correctWords };
+        }
+
+        function selectNextWordByRules() {
+            // Rule 1: If no statistics exist, use random selection
+            if (!hasAnyStatistics()) {
+                const randomIndex = Math.floor(Math.random() * vocabulary.length);
+                return vocabulary[randomIndex];
             }
             
-            // For all other words, include them in every round
-            return true;
+            const { weightedList, errorWords, correctWords } = createWeightedWordList();
+            
+            // If no words in weighted list, fallback to random
+            if (weightedList.length === 0) {
+                const randomIndex = Math.floor(Math.random() * vocabulary.length);
+                return vocabulary[randomIndex];
+            }
+            
+            // Rule 3: After 9 consecutive error words, show a correct word
+            if (consecutiveErrorWords >= 9 && correctWords.length > 0) {
+                consecutiveErrorWords = 0; // Reset counter
+                const randomCorrectIndex = Math.floor(Math.random() * correctWords.length);
+                return correctWords[randomCorrectIndex];
+            }
+            
+            // Rule 2 & 4: Select from weighted list (prioritizing error words with higher frequency)
+            const errorWordsList = weightedList.filter(item => item.isErrorWord);
+            
+            if (errorWordsList.length > 0) {
+                // Select an error word
+                const randomIndex = Math.floor(Math.random() * errorWordsList.length);
+                consecutiveErrorWords++;
+                return errorWordsList[randomIndex].word;
+            } else {
+                // No error words available, select from correct words
+                consecutiveErrorWords = 0;
+                const randomIndex = Math.floor(Math.random() * correctWords.length);
+                return correctWords[randomIndex];
+            }
         }
+
 
         function initializeWordStats() {
             wordStats = {};
@@ -768,43 +844,17 @@
             incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
             roundCounter = 0; // Reset round counter for new quiz
+            consecutiveErrorWords = 0; // Reset consecutive error word counter
+            wordSelectionQueue = []; // Reset word selection queue
             initializeWordStats(); // Initialize per-word statistics
-            document.getElementById('totalWords').textContent = shuffledVocabulary.length;
+            document.getElementById('totalWords').textContent = vocabulary.length;
             showCurrentWord();
         }
 
         function showCurrentWord() {
-            if (currentIndex >= shuffledVocabulary.length) {
-                // Round completed - increment round counter and reorganize vocabulary
-                roundCounter++;
-                
-                // Filter words based on round and correct count
-                const wordsForThisRound = vocabulary.filter(word => shouldIncludeWordInRound(word, roundCounter));
-                
-                // If no words pass the filter (all have >2 correct), include all words to prevent empty rounds
-                const finalWordsForRound = wordsForThisRound.length > 0 ? wordsForThisRound : vocabulary;
-                
-                if (incorrectWords.length > 0) {
-                    // Create new shuffled array with incorrect words at the beginning
-                    const correctWordsForRound = finalWordsForRound.filter(word => 
-                        !incorrectWords.some(incorrect => 
-                            incorrect.english === word.english && incorrect.chinese === word.chinese
-                        )
-                    );
-                    const shuffledCorrect = shuffleArray(correctWordsForRound);
-                    const shuffledIncorrect = shuffleArray(incorrectWords.filter(word => 
-                        shouldIncludeWordInRound(word, roundCounter)
-                    ));
-                    shuffledVocabulary = [...shuffledIncorrect, ...shuffledCorrect];
-                    incorrectWords = []; // Reset for next round
-                } else {
-                    // No incorrect words, just shuffle words that should be included this round
-                    shuffledVocabulary = shuffleArray(finalWordsForRound);
-                }
-                currentIndex = 0;
-            }
-
-            const currentWord = shuffledVocabulary[currentIndex];
+            // Use new word selection rules
+            const currentWord = selectNextWordByRules();
+            
             document.getElementById('englishWord').textContent = currentWord.english;
             document.getElementById('chineseText').textContent = currentWord.chinese;
             
@@ -812,19 +862,22 @@
             const chineseAnswer = document.getElementById('chineseAnswer');
             chineseAnswer.classList.add('hidden');
             
-            // 更新統計
-            document.getElementById('currentNumber').textContent = currentIndex + 1;
+            // 更新統計 - keep the current count logic for display
+            document.getElementById('currentNumber').textContent = completedCount + 1;
             document.getElementById('completedWords').textContent = completedCount;
             document.getElementById('correctCount').textContent = correctCount;
             document.getElementById('incorrectCount').textContent = incorrectCount;
             
-            // 更新進度條
-            const progress = ((currentIndex + 1) / shuffledVocabulary.length) * 100;
-            document.getElementById('progressBar').style.width = progress + '%';
+            // 更新進度條 - use a continuous progress based on completed words
+            const progress = (completedCount / (vocabulary.length * 2)) * 100; // Rough estimate for progress
+            document.getElementById('progressBar').style.width = Math.min(progress, 100) + '%';
+            
+            // Store current word for use in markAnswer
+            showCurrentWord.currentWord = currentWord;
         }
 
         function speakWord() {
-            const currentWord = shuffledVocabulary[currentIndex];
+            const currentWord = showCurrentWord.currentWord || vocabulary[0]; // Fallback to first word
             if (currentWord && 'speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(currentWord.english);
                 utterance.lang = 'en-US';
@@ -846,7 +899,7 @@
                 closeUploadSection();
             }
             
-            const currentWord = shuffledVocabulary[currentIndex];
+            const currentWord = showCurrentWord.currentWord || vocabulary[0]; // Fallback to first word
             const wordKey = generateWordKey(currentWord);
             
             // Update per-word statistics
@@ -861,14 +914,6 @@
             } else {
                 incorrectCount++;
                 wordStats[wordKey].incorrect++;
-                // If marked as incorrect, add to incorrectWords array
-                // Check if word is not already in incorrectWords
-                const alreadyExists = incorrectWords.some(word => 
-                    word.english === currentWord.english && word.chinese === currentWord.chinese
-                );
-                if (!alreadyExists) {
-                    incorrectWords.push({...currentWord});
-                }
             }
             
             // Move to next word
@@ -877,7 +922,6 @@
 
         function nextWord() {
             completedCount++;
-            currentIndex++;
             showCurrentWord();
             speakWord(); // Auto-play pronunciation for the new word
         }
