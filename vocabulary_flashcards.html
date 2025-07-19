@@ -536,6 +536,7 @@
         let correctCount = 0; // Track correct answers
         let incorrectCount = 0; // Track incorrect answers
         let wordStats = {}; // Track per-word statistics: {wordKey: {correct: 0, incorrect: 0}}
+        let roundCounter = 0; // Track which round we're in for frequency control
 
         function downloadCSV() {
             // Generate CSV content with word statistics
@@ -572,6 +573,20 @@
 
         function generateWordKey(word) {
             return `${word.english}|${word.chinese}`;
+        }
+
+        function shouldIncludeWordInRound(word, round) {
+            const wordKey = generateWordKey(word);
+            const stats = wordStats[wordKey] || { correct: 0, incorrect: 0 };
+            
+            // If word has been correct more than 2 times, include it only every other round
+            if (stats.correct > 2) {
+                // Include word in even rounds (0, 2, 4, ...) only
+                return round % 2 === 0;
+            }
+            
+            // For all other words, include them in every round
+            return true;
         }
 
         function initializeWordStats() {
@@ -752,6 +767,7 @@
             correctCount = 0; // Reset correct count
             incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
+            roundCounter = 0; // Reset round counter for new quiz
             initializeWordStats(); // Initialize per-word statistics
             document.getElementById('totalWords').textContent = shuffledVocabulary.length;
             showCurrentWord();
@@ -759,21 +775,31 @@
 
         function showCurrentWord() {
             if (currentIndex >= shuffledVocabulary.length) {
-                // Round completed - reorganize vocabulary with incorrect words first
+                // Round completed - increment round counter and reorganize vocabulary
+                roundCounter++;
+                
+                // Filter words based on round and correct count
+                const wordsForThisRound = vocabulary.filter(word => shouldIncludeWordInRound(word, roundCounter));
+                
+                // If no words pass the filter (all have >2 correct), include all words to prevent empty rounds
+                const finalWordsForRound = wordsForThisRound.length > 0 ? wordsForThisRound : vocabulary;
+                
                 if (incorrectWords.length > 0) {
                     // Create new shuffled array with incorrect words at the beginning
-                    const correctWords = vocabulary.filter(word => 
+                    const correctWordsForRound = finalWordsForRound.filter(word => 
                         !incorrectWords.some(incorrect => 
                             incorrect.english === word.english && incorrect.chinese === word.chinese
                         )
                     );
-                    const shuffledCorrect = shuffleArray(correctWords);
-                    const shuffledIncorrect = shuffleArray(incorrectWords);
+                    const shuffledCorrect = shuffleArray(correctWordsForRound);
+                    const shuffledIncorrect = shuffleArray(incorrectWords.filter(word => 
+                        shouldIncludeWordInRound(word, roundCounter)
+                    ));
                     shuffledVocabulary = [...shuffledIncorrect, ...shuffledCorrect];
                     incorrectWords = []; // Reset for next round
                 } else {
-                    // No incorrect words, just reshuffle all
-                    shuffledVocabulary = shuffleArray(vocabulary);
+                    // No incorrect words, just shuffle words that should be included this round
+                    shuffledVocabulary = shuffleArray(finalWordsForRound);
                 }
                 currentIndex = 0;
             }
