@@ -455,10 +455,12 @@
             
             <div class="csv-format">
                 <strong>CSV格式範例：</strong><br>
-                英文,中文<br>
-                eligible,"有資格的"<br>
-                associate,"使有關連"<br>
-                lack,"缺乏"
+                英文,中文,錯誤次數,正確次數<br>
+                eligible,"有資格的",2,5<br>
+                associate,"使有關連",0,3<br>
+                lack,"缺乏",1,4<br>
+                <br>
+                <small><strong>注意：</strong>錯誤次數與正確次數為選用欄位</small>
             </div>
         </div>
 
@@ -594,7 +596,15 @@
             vocabulary.forEach(word => {
                 const wordKey = generateWordKey(word);
                 if (!wordStats[wordKey]) {
-                    wordStats[wordKey] = { correct: 0, incorrect: 0 };
+                    // Use imported statistics if available, otherwise default to 0
+                    if (word.statistics) {
+                        wordStats[wordKey] = {
+                            correct: word.statistics.correct,
+                            incorrect: word.statistics.incorrect
+                        };
+                    } else {
+                        wordStats[wordKey] = { correct: 0, incorrect: 0 };
+                    }
                 }
             });
         }
@@ -706,10 +716,22 @@
                     const chinese = csvValues[1].trim();
                     
                     if (english && chinese) {
-                        vocabulary.push({
+                        const wordData = {
                             english: english,
                             chinese: chinese
-                        });
+                        };
+                        
+                        // Handle optional statistics columns (錯誤次數, 正確次數)
+                        if (csvValues.length >= 4) {
+                            const incorrectCount = parseInt(csvValues[2].trim()) || 0;
+                            const correctCount = parseInt(csvValues[3].trim()) || 0;
+                            wordData.statistics = {
+                                incorrect: incorrectCount,
+                                correct: correctCount
+                            };
+                        }
+                        
+                        vocabulary.push(wordData);
                     }
                 }
             }
