@@ -541,6 +541,11 @@
         let roundCounter = 0; // Track which round we're in for frequency control
         let consecutiveErrorWords = 0; // Track consecutive error words shown
         let wordSelectionQueue = []; // Queue for word selection based on new rules
+        
+        // New feature: Track last 3 incorrect words for forced review
+        let recentIncorrectWords = []; // Queue of recent incorrect words (max 3)
+        let isInReviewMode = false; // Flag to indicate if we're in review mode
+        let reviewModeCorrectCounts = {}; // Track correct answers for each word in review mode
 
         function downloadCSV() {
             // Generate CSV content with word statistics
@@ -577,6 +582,83 @@
 
         function generateWordKey(word) {
             return `${word.english}|${word.chinese}`;
+        }
+
+        function addToRecentIncorrectWords(word) {
+            const wordKey = generateWordKey(word);
+            
+            // Remove the word if it's already in the queue to avoid duplicates
+            recentIncorrectWords = recentIncorrectWords.filter(w => generateWordKey(w) !== wordKey);
+            
+            // Add the word to the front of the queue
+            recentIncorrectWords.unshift(word);
+            
+            // Keep only the last 3 incorrect words
+            if (recentIncorrectWords.length > 3) {
+                recentIncorrectWords = recentIncorrectWords.slice(0, 3);
+            }
+            
+            // Check if we should enter review mode
+            if (recentIncorrectWords.length === 3 && !isInReviewMode) {
+                enterReviewMode();
+            }
+        }
+
+        function enterReviewMode() {
+            isInReviewMode = true;
+            reviewModeCorrectCounts = {};
+            
+            // Initialize correct counts for all words in review
+            recentIncorrectWords.forEach(word => {
+                const wordKey = generateWordKey(word);
+                reviewModeCorrectCounts[wordKey] = 0;
+            });
+        }
+
+        function checkExitReviewMode() {
+            if (!isInReviewMode) return false;
+            
+            // Check if all words in review mode have been answered correctly at least once
+            const allWordsCorrect = recentIncorrectWords.every(word => {
+                const wordKey = generateWordKey(word);
+                return reviewModeCorrectCounts[wordKey] >= 1;
+            });
+            
+            if (allWordsCorrect) {
+                exitReviewMode();
+                return true;
+            }
+            
+            return false;
+        }
+
+        function exitReviewMode() {
+            isInReviewMode = false;
+            recentIncorrectWords = [];
+            reviewModeCorrectCounts = {};
+        }
+
+        function selectWordInReviewMode() {
+            if (recentIncorrectWords.length === 0) {
+                exitReviewMode();
+                return selectNextWordByRules();
+            }
+            
+            // Prioritize words that haven't been answered correctly yet
+            const unansweredWords = recentIncorrectWords.filter(word => {
+                const wordKey = generateWordKey(word);
+                return reviewModeCorrectCounts[wordKey] === 0;
+            });
+            
+            if (unansweredWords.length > 0) {
+                // Select randomly from unanswered words
+                const randomIndex = Math.floor(Math.random() * unansweredWords.length);
+                return unansweredWords[randomIndex];
+            } else {
+                // All words have been answered correctly at least once, select randomly from all review words
+                const randomIndex = Math.floor(Math.random() * recentIncorrectWords.length);
+                return recentIncorrectWords[randomIndex];
+            }
         }
 
         function calculateEffectiveErrorCount(word) {
@@ -629,6 +711,11 @@
         }
 
         function selectNextWordByRules() {
+            // New Rule: If in review mode, only show the 3 recent incorrect words
+            if (isInReviewMode) {
+                return selectWordInReviewMode();
+            }
+            
             // Rule 1: If no statistics exist, use random selection
             if (!hasAnyStatistics()) {
                 const randomIndex = Math.floor(Math.random() * vocabulary.length);
@@ -868,6 +955,12 @@
             roundCounter = 0; // Reset round counter for new quiz
             consecutiveErrorWords = 0; // Reset consecutive error word counter
             wordSelectionQueue = []; // Reset word selection queue
+            
+            // Reset review mode variables
+            recentIncorrectWords = [];
+            isInReviewMode = false;
+            reviewModeCorrectCounts = {};
+            
             initializeWordStats(); // Initialize per-word statistics
             document.getElementById('totalWords').textContent = vocabulary.length;
             showCurrentWord();
@@ -896,6 +989,14 @@
             
             // Store current word for use in markAnswer
             showCurrentWord.currentWord = currentWord;
+            
+            // Debug info: Add review mode indicator to title
+            const titleElement = document.querySelector('h1');
+            if (isInReviewMode) {
+                titleElement.textContent = `📚 英文單字複習 (複習模式: ${recentIncorrectWords.length}/3)`;
+            } else {
+                titleElement.textContent = '📚 英文單字複習';
+            }
         }
 
         function speakWord() {
@@ -933,9 +1034,21 @@
             if (isCorrect) {
                 correctCount++;
                 wordStats[wordKey].correct++;
+                
+                // If in review mode, track correct answers for review words
+                if (isInReviewMode && reviewModeCorrectCounts[wordKey] !== undefined) {
+                    reviewModeCorrectCounts[wordKey]++;
+                    // Check if we can exit review mode
+                    checkExitReviewMode();
+                }
             } else {
                 incorrectCount++;
                 wordStats[wordKey].incorrect++;
+                
+                // Add to recent incorrect words (only if not in review mode to avoid infinite loop)
+                if (!isInReviewMode) {
+                    addToRecentIncorrectWords(currentWord);
+                }
             }
             
             // Move to next word
