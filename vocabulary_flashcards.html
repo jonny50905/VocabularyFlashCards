@@ -990,12 +990,14 @@
             // Store current word for use in markAnswer
             showCurrentWord.currentWord = currentWord;
             
-            // Debug info: Add review mode indicator to title
+            // Update UI to show review mode status
             const titleElement = document.querySelector('h1');
             if (isInReviewMode) {
-                titleElement.textContent = `📚 英文單字複習 (複習模式: ${recentIncorrectWords.length}/3)`;
+                titleElement.textContent = `📚 英文單字複習 🔄 複習模式`;
+                titleElement.style.color = '#e53e3e'; // Red color for review mode
             } else {
                 titleElement.textContent = '📚 英文單字複習';
+                titleElement.style.color = '#4a5568'; // Original color
             }
         }
 
