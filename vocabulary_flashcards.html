@@ -970,7 +970,13 @@
             // Use new word selection rules
             const currentWord = selectNextWordByRules();
             
-            document.getElementById('englishWord').textContent = currentWord.english;
+            // Display English word with review mode indicator if needed
+            const englishWordElement = document.getElementById('englishWord');
+            if (isInReviewMode) {
+                englishWordElement.textContent = `🔄 ${currentWord.english}`;
+            } else {
+                englishWordElement.textContent = currentWord.english;
+            }
             document.getElementById('chineseText').textContent = currentWord.chinese;
             
             // 重置中文答案為隱藏狀態
@@ -990,15 +996,10 @@
             // Store current word for use in markAnswer
             showCurrentWord.currentWord = currentWord;
             
-            // Update UI to show review mode status
+            // Keep title consistent without review mode text
             const titleElement = document.querySelector('h1');
-            if (isInReviewMode) {
-                titleElement.textContent = `📚 英文單字複習 🔄 複習模式`;
-                titleElement.style.color = '#e53e3e'; // Red color for review mode
-            } else {
-                titleElement.textContent = '📚 英文單字複習';
-                titleElement.style.color = '#4a5568'; // Original color
-            }
+            titleElement.textContent = '📚 英文單字複習';
+            titleElement.style.color = '#4a5568';
         }
 
         function speakWord() {
