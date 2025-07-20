@@ -538,17 +538,13 @@
         let correctCount = 0; // Track correct answers
         let incorrectCount = 0; // Track incorrect answers
         let wordStats = {}; // Track per-word statistics: {wordKey: {correct: 0, incorrect: 0}}
-        let roundCounter = 0; // Track which round we're in for frequency control
-        let consecutiveErrorWords = 0; // Track consecutive error words shown
-        let wordSelectionQueue = []; // Queue for word selection based on new rules
         
-        // New feature: Track last 3 incorrect words for forced review
-        let recentIncorrectWords = []; // Queue of recent incorrect words (max 3)
-        let isInReviewMode = false; // Flag to indicate if we're in review mode
-        let reviewModeCorrectCounts = {}; // Track correct answers for each word in review mode
-        
-        // Track last shown word to prevent immediate repetition
-        let lastShownWord = null;
+        // New word selection algorithm state variables
+        let states = {S1: new Set(), S2: new Set(), S3: new Set(), S4: new Set(), S5: new Set()};
+        let cooldown = {}; // word -> remainingSteps (only for S2/S3)
+        let s5Queue = []; // words in S5 not yet used this round
+        let s5UsedThisRound = new Set();
+        let stepsSinceLastS5 = 0;
 
         function downloadCSV() {
             // Generate CSV content with word statistics
@@ -587,261 +583,192 @@
             return `${word.english}|${word.chinese}`;
         }
 
-        function addToRecentIncorrectWords(word) {
-            const wordKey = generateWordKey(word);
-            
-            // Remove the word if it's already in the queue to avoid duplicates
-            recentIncorrectWords = recentIncorrectWords.filter(w => generateWordKey(w) !== wordKey);
-            
-            // Add the word to the front of the queue
-            recentIncorrectWords.unshift(word);
-            
-            // Keep only the last 3 incorrect words
-            if (recentIncorrectWords.length > 3) {
-                recentIncorrectWords = recentIncorrectWords.slice(0, 3);
-            }
-            
-            // Check if we should enter review mode
-            if (recentIncorrectWords.length === 3 && !isInReviewMode) {
-                enterReviewMode();
-            }
-        }
-
-        function enterReviewMode() {
-            isInReviewMode = true;
-            reviewModeCorrectCounts = {};
-            
-            // Initialize correct counts for all words in review
-            recentIncorrectWords.forEach(word => {
-                const wordKey = generateWordKey(word);
-                reviewModeCorrectCounts[wordKey] = 0;
-            });
-        }
-
-        function checkExitReviewMode() {
-            if (!isInReviewMode) return false;
-            
-            // Check if all words in review mode have been answered correctly at least once
-            const allWordsCorrect = recentIncorrectWords.every(word => {
-                const wordKey = generateWordKey(word);
-                return reviewModeCorrectCounts[wordKey] >= 1;
-            });
-            
-            if (allWordsCorrect) {
-                exitReviewMode();
-                return true;
-            }
-            
-            return false;
-        }
-
-        function exitReviewMode() {
-            isInReviewMode = false;
-            recentIncorrectWords = [];
-            reviewModeCorrectCounts = {};
-        }
-
-        function selectWordInReviewMode() {
-            if (recentIncorrectWords.length === 0) {
-                exitReviewMode();
-                return selectNextWordByRules();
-            }
-            
-            // Prioritize words that haven't been answered correctly yet, but exclude last shown word
-            const unansweredWords = recentIncorrectWords.filter(word => {
-                const wordKey = generateWordKey(word);
-                const isNotLastShown = !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                return reviewModeCorrectCounts[wordKey] === 0 && isNotLastShown;
-            });
-            
-            if (unansweredWords.length > 0) {
-                // Select randomly from unanswered words (excluding last shown)
-                const randomIndex = Math.floor(Math.random() * unansweredWords.length);
-                return unansweredWords[randomIndex];
-            } else {
-                // If no unanswered words available (excluding last shown), try all review words except last shown
-                const availableWords = recentIncorrectWords.filter(word => {
-                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                });
-                
-                if (availableWords.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * availableWords.length);
-                    return availableWords[randomIndex];
-                } else {
-                    // If only last shown word is available, we must show it (edge case with single word in review)
-                    const randomIndex = Math.floor(Math.random() * recentIncorrectWords.length);
-                    return recentIncorrectWords[randomIndex];
-                }
-            }
-        }
-
-        function calculateEffectiveErrorCount(word) {
+        // New word classification system based on issue requirements
+        function classify(word) {
             const wordKey = generateWordKey(word);
             const stats = wordStats[wordKey] || { correct: 0, incorrect: 0 };
-            return Math.max(0, stats.incorrect - stats.correct);
-        }
-
-        function hasAnyStatistics() {
-            return Object.values(wordStats).some(stats => stats.correct > 0 || stats.incorrect > 0);
-        }
-
-        function categorizeWords() {
-            const errorWords = [];
-            const correctWords = [];
+            const cErr = stats.incorrect;
+            const cOk = stats.correct;
             
+            if (cErr > 0 && cOk === 0) return 'S2';
+            if (cOk > 0 && cErr > cOk) return 'S3';
+            if (cErr === 0 && cOk === 0) return 'S1';
+            if (cErr === cOk && cOk > 0) return 'S4';
+            // else cOk > cErr (and not equal) or cOk > 0 with no errors
+            return 'S5';
+        }
+
+        function updateWordStates() {
+            // Clear all states
+            states.S1.clear();
+            states.S2.clear();
+            states.S3.clear();
+            states.S4.clear();
+            states.S5.clear();
+            
+            // Classify all words into states
             vocabulary.forEach(word => {
-                const effectiveErrorCount = calculateEffectiveErrorCount(word);
-                if (effectiveErrorCount > 0) {
-                    errorWords.push({
-                        word: word,
-                        errorCount: effectiveErrorCount
-                    });
-                } else {
-                    correctWords.push(word);
-                }
+                const wordKey = generateWordKey(word);
+                const state = classify(word);
+                states[state].add(wordKey);
             });
-            
-            return { errorWords, correctWords };
         }
 
-        function createWeightedWordList() {
-            const { errorWords, correctWords } = categorizeWords();
-            let weightedList = [];
-            
-            // Add error words with weight based on error count
-            errorWords.forEach(({ word, errorCount }) => {
-                // Add word multiple times based on error count for higher frequency
-                for (let i = 0; i < errorCount; i++) {
-                    weightedList.push({ word, isErrorWord: true });
+        function anyAvailable(state) {
+            if (state === 'S2' || state === 'S3') {
+                // Check if any word in this state has cooldown = 0
+                for (let wordKey of states[state]) {
+                    if ((cooldown[wordKey] || 0) === 0) {
+                        return true;
+                    }
                 }
-            });
-            
-            // Add correct words once each
-            correctWords.forEach(word => {
-                weightedList.push({ word, isErrorWord: false });
-            });
-            
-            return { weightedList, errorWords, correctWords };
+                return false;
+            }
+            if (state === 'S5') {
+                ensureS5Queue();
+                return s5Queue.length > 0;
+            }
+            return states[state].size > 0;
         }
 
-        function selectNextWordByRules() {
-            // New Rule: If in review mode, only show the 3 recent incorrect words
-            if (isInReviewMode) {
-                return selectWordInReviewMode();
-            }
-            
-            // Rule 1: If no statistics exist, use random selection (excluding last shown word)
-            if (!hasAnyStatistics()) {
-                const availableWords = vocabulary.filter(word => {
-                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                });
-                
-                if (availableWords.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * availableWords.length);
-                    return availableWords[randomIndex];
-                } else {
-                    // If vocabulary only has one word, we must show it
-                    const randomIndex = Math.floor(Math.random() * vocabulary.length);
-                    return vocabulary[randomIndex];
-                }
-            }
-            
-            const { weightedList, errorWords, correctWords } = createWeightedWordList();
-            
-            // If no words in weighted list, fallback to random (excluding last shown word)
-            if (weightedList.length === 0) {
-                const availableWords = vocabulary.filter(word => {
-                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                });
-                
-                if (availableWords.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * availableWords.length);
-                    return availableWords[randomIndex];
-                } else {
-                    // If vocabulary only has one word, we must show it
-                    const randomIndex = Math.floor(Math.random() * vocabulary.length);
-                    return vocabulary[randomIndex];
-                }
-            }
-            
-            // Rule 3: After 9 consecutive error words, show a correct word (excluding last shown word)
-            if (consecutiveErrorWords >= 9 && correctWords.length > 0) {
-                consecutiveErrorWords = 0; // Reset counter
-                
-                const availableCorrectWords = correctWords.filter(word => {
-                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                });
-                
-                if (availableCorrectWords.length > 0) {
-                    const randomCorrectIndex = Math.floor(Math.random() * availableCorrectWords.length);
-                    return availableCorrectWords[randomCorrectIndex];
-                } else {
-                    // If all correct words are the last shown word, select from error words instead
-                    const errorWordsList = weightedList.filter(item => item.isErrorWord);
-                    if (errorWordsList.length > 0) {
-                        const availableErrorWords = errorWordsList.filter(item => {
-                            return !lastShownWord || generateWordKey(item.word) !== generateWordKey(lastShownWord);
-                        });
-                        
-                        if (availableErrorWords.length > 0) {
-                            const randomIndex = Math.floor(Math.random() * availableErrorWords.length);
-                            consecutiveErrorWords++;
-                            return availableErrorWords[randomIndex].word;
-                        }
-                    }
-                    // Last resort: return any correct word even if it's the last shown
-                    const randomCorrectIndex = Math.floor(Math.random() * correctWords.length);
-                    return correctWords[randomCorrectIndex];
-                }
-            }
-            
-            // Rule 2 & 4: Select from weighted list (prioritizing error words with higher frequency, excluding last shown word)
-            const errorWordsList = weightedList.filter(item => item.isErrorWord);
-            
-            if (errorWordsList.length > 0) {
-                // Select an error word (excluding last shown word)
-                const availableErrorWords = errorWordsList.filter(item => {
-                    return !lastShownWord || generateWordKey(item.word) !== generateWordKey(lastShownWord);
-                });
-                
-                if (availableErrorWords.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * availableErrorWords.length);
-                    consecutiveErrorWords++;
-                    return availableErrorWords[randomIndex].word;
-                } else {
-                    // All error words are the last shown word, select from correct words
-                    const availableCorrectWords = correctWords.filter(word => {
-                        return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                    });
-                    
-                    if (availableCorrectWords.length > 0) {
-                        consecutiveErrorWords = 0;
-                        const randomIndex = Math.floor(Math.random() * availableCorrectWords.length);
-                        return availableCorrectWords[randomIndex];
-                    } else {
-                        // Last resort: show the last shown word again (only happens with very few words)
-                        const randomIndex = Math.floor(Math.random() * errorWordsList.length);
-                        consecutiveErrorWords++;
-                        return errorWordsList[randomIndex].word;
+        function ensureS5Queue() {
+            if (s5Queue.length === 0) {
+                // Create queue from S5 words not used this round
+                const availableS5Words = [];
+                for (let wordKey of states.S5) {
+                    if (!s5UsedThisRound.has(wordKey)) {
+                        const word = vocabulary.find(w => generateWordKey(w) === wordKey);
+                        if (word) availableS5Words.push(word);
                     }
                 }
+                
+                if (availableS5Words.length === 0) {
+                    // All S5 words used this round -> reset
+                    s5UsedThisRound.clear();
+                    for (let wordKey of states.S5) {
+                        const word = vocabulary.find(w => generateWordKey(w) === wordKey);
+                        if (word) availableS5Words.push(word);
+                    }
+                }
+                
+                s5Queue = [...availableS5Words];
+            }
+        }
+
+        function pickFromState(state) {
+            if (state === 'S5') {
+                ensureS5Queue();
+                if (s5Queue.length === 0) return null;
+                
+                // Choose by policy (pop front for now)
+                const word = s5Queue.shift();
+                const wordKey = generateWordKey(word);
+                s5UsedThisRound.add(wordKey);
+                return word;
             } else {
-                // No error words available, select from correct words (excluding last shown word)
-                const availableCorrectWords = correctWords.filter(word => {
-                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
-                });
+                // Create pool of available words
+                const pool = [];
+                for (let wordKey of states[state]) {
+                    if (state === 'S2' || state === 'S3') {
+                        if ((cooldown[wordKey] || 0) === 0) {
+                            const word = vocabulary.find(w => generateWordKey(w) === wordKey);
+                            if (word) pool.push(word);
+                        }
+                    } else {
+                        const word = vocabulary.find(w => generateWordKey(w) === wordKey);
+                        if (word) pool.push(word);
+                    }
+                }
                 
-                if (availableCorrectWords.length > 0) {
-                    consecutiveErrorWords = 0;
-                    const randomIndex = Math.floor(Math.random() * availableCorrectWords.length);
-                    return availableCorrectWords[randomIndex];
-                } else {
-                    // Last resort: show any correct word even if it's the last shown
-                    consecutiveErrorWords = 0;
-                    const randomIndex = Math.floor(Math.random() * correctWords.length);
-                    return correctWords[randomIndex];
+                if (pool.length === 0) return null;
+                
+                // Weighted selection (for now, just random)
+                const randomIndex = Math.floor(Math.random() * pool.length);
+                return pool[randomIndex];
+            }
+        }
+
+        function pickIgnoringCooldown(stateOrder) {
+            for (let state of stateOrder) {
+                if (states[state].size > 0) {
+                    const pool = [];
+                    for (let wordKey of states[state]) {
+                        const word = vocabulary.find(w => generateWordKey(w) === wordKey);
+                        if (word) pool.push(word);
+                    }
+                    
+                    if (pool.length > 0) {
+                        const randomIndex = Math.floor(Math.random() * pool.length);
+                        return pool[randomIndex];
+                    }
                 }
             }
+            return null;
+        }
+
+        // Main word selection function implementing the new algorithm
+        function nextWord() {
+            // 1. Update cooldown
+            for (let wordKey in cooldown) {
+                if (cooldown[wordKey] > 0) {
+                    cooldown[wordKey] -= 1;
+                }
+            }
+
+            // Update word states based on current statistics
+            updateWordStates();
+
+            // 2. Check S5 guarantee (P0)
+            if (stepsSinceLastS5 >= 10 && anyAvailable('S5')) {
+                const candidate = pickFromState('S5');
+                if (candidate) {
+                    stepsSinceLastS5 = 0;
+                    return candidate;
+                }
+            }
+
+            // 3. P1..P5 - try states in priority order
+            const stateOrder = ['S2', 'S3', 'S1', 'S4', 'S5'];
+            for (let state of stateOrder) {
+                if (anyAvailable(state)) {
+                    const candidate = pickFromState(state);
+                    if (candidate) {
+                        const wordKey = generateWordKey(candidate);
+                        
+                        if (state === 'S5') {
+                            stepsSinceLastS5 = 0;
+                        } else {
+                            stepsSinceLastS5 += 1;
+                        }
+                        
+                        if (state === 'S2' || state === 'S3') {
+                            cooldown[wordKey] = 2;
+                        }
+                        
+                        return candidate;
+                    }
+                }
+            }
+
+            // 4. Fallback (ignoring cooldown)
+            const candidate = pickIgnoringCooldown(['S2', 'S3', 'S1', 'S4', 'S5']);
+            if (candidate) {
+                const wordKey = generateWordKey(candidate);
+                const state = classify(candidate);
+                
+                if (state === 'S5') {
+                    stepsSinceLastS5 = 0;
+                } else {
+                    stepsSinceLastS5 += 1;
+                }
+                
+                return candidate;
+            }
+
+            // Ultimate fallback: random word from vocabulary
+            const randomIndex = Math.floor(Math.random() * vocabulary.length);
+            stepsSinceLastS5 += 1;
+            return vocabulary[randomIndex];
         }
 
 
@@ -1043,37 +970,27 @@
             correctCount = 0; // Reset correct count
             incorrectCount = 0; // Reset incorrect count
             incorrectWords = []; // Reset incorrect words for new quiz
-            roundCounter = 0; // Reset round counter for new quiz
-            consecutiveErrorWords = 0; // Reset consecutive error word counter
-            wordSelectionQueue = []; // Reset word selection queue
             
-            // Reset review mode variables
-            recentIncorrectWords = [];
-            isInReviewMode = false;
-            reviewModeCorrectCounts = {};
-            
-            // Reset last shown word tracker
-            lastShownWord = null;
+            // Reset new algorithm state variables
+            states = {S1: new Set(), S2: new Set(), S3: new Set(), S4: new Set(), S5: new Set()};
+            cooldown = {};
+            s5Queue = [];
+            s5UsedThisRound = new Set();
+            stepsSinceLastS5 = 0;
             
             initializeWordStats(); // Initialize per-word statistics
+            updateWordStates(); // Classify words into states
             document.getElementById('totalWords').textContent = vocabulary.length;
             showCurrentWord();
         }
 
         function showCurrentWord() {
-            // Use new word selection rules
-            const currentWord = selectNextWordByRules();
+            // Use new word selection algorithm
+            const currentWord = nextWord();
             
-
-           // Update last shown word tracker
-            lastShownWord = currentWord;
-            // Display English word with review mode indicator if needed
+            // Display English word
             const englishWordElement = document.getElementById('englishWord');
-            if (isInReviewMode) {
-                englishWordElement.textContent = `🔄 ${currentWord.english}`;
-            } else {
-                englishWordElement.textContent = currentWord.english;
-            }
+            englishWordElement.textContent = currentWord.english;
 
             document.getElementById('chineseText').textContent = currentWord.chinese;
             
@@ -1094,7 +1011,7 @@
             // Store current word for use in markAnswer
             showCurrentWord.currentWord = currentWord;
             
-            // Keep title consistent without review mode text
+            // Keep title consistent
             const titleElement = document.querySelector('h1');
             titleElement.textContent = '📚 英文單字複習';
             titleElement.style.color = '#4a5568';
@@ -1135,28 +1052,16 @@
             if (isCorrect) {
                 correctCount++;
                 wordStats[wordKey].correct++;
-                
-                // If in review mode, track correct answers for review words
-                if (isInReviewMode && reviewModeCorrectCounts[wordKey] !== undefined) {
-                    reviewModeCorrectCounts[wordKey]++;
-                    // Check if we can exit review mode
-                    checkExitReviewMode();
-                }
             } else {
                 incorrectCount++;
                 wordStats[wordKey].incorrect++;
-                
-                // Add to recent incorrect words (only if not in review mode to avoid infinite loop)
-                if (!isInReviewMode) {
-                    addToRecentIncorrectWords(currentWord);
-                }
             }
             
             // Move to next word
-            nextWord();
+            nextWordDisplay();
         }
 
-        function nextWord() {
+        function nextWordDisplay() {
             completedCount++;
             showCurrentWord();
             speakWord(); // Auto-play pronunciation for the new word
