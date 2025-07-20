@@ -546,6 +546,9 @@
         let recentIncorrectWords = []; // Queue of recent incorrect words (max 3)
         let isInReviewMode = false; // Flag to indicate if we're in review mode
         let reviewModeCorrectCounts = {}; // Track correct answers for each word in review mode
+        
+        // Track last shown word to prevent immediate repetition
+        let lastShownWord = null;
 
         function downloadCSV() {
             // Generate CSV content with word statistics
@@ -644,20 +647,31 @@
                 return selectNextWordByRules();
             }
             
-            // Prioritize words that haven't been answered correctly yet
+            // Prioritize words that haven't been answered correctly yet, but exclude last shown word
             const unansweredWords = recentIncorrectWords.filter(word => {
                 const wordKey = generateWordKey(word);
-                return reviewModeCorrectCounts[wordKey] === 0;
+                const isNotLastShown = !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                return reviewModeCorrectCounts[wordKey] === 0 && isNotLastShown;
             });
             
             if (unansweredWords.length > 0) {
-                // Select randomly from unanswered words
+                // Select randomly from unanswered words (excluding last shown)
                 const randomIndex = Math.floor(Math.random() * unansweredWords.length);
                 return unansweredWords[randomIndex];
             } else {
-                // All words have been answered correctly at least once, select randomly from all review words
-                const randomIndex = Math.floor(Math.random() * recentIncorrectWords.length);
-                return recentIncorrectWords[randomIndex];
+                // If no unanswered words available (excluding last shown), try all review words except last shown
+                const availableWords = recentIncorrectWords.filter(word => {
+                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableWords.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableWords.length);
+                    return availableWords[randomIndex];
+                } else {
+                    // If only last shown word is available, we must show it (edge case with single word in review)
+                    const randomIndex = Math.floor(Math.random() * recentIncorrectWords.length);
+                    return recentIncorrectWords[randomIndex];
+                }
             }
         }
 
@@ -716,40 +730,117 @@
                 return selectWordInReviewMode();
             }
             
-            // Rule 1: If no statistics exist, use random selection
+            // Rule 1: If no statistics exist, use random selection (excluding last shown word)
             if (!hasAnyStatistics()) {
-                const randomIndex = Math.floor(Math.random() * vocabulary.length);
-                return vocabulary[randomIndex];
+                const availableWords = vocabulary.filter(word => {
+                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableWords.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableWords.length);
+                    return availableWords[randomIndex];
+                } else {
+                    // If vocabulary only has one word, we must show it
+                    const randomIndex = Math.floor(Math.random() * vocabulary.length);
+                    return vocabulary[randomIndex];
+                }
             }
             
             const { weightedList, errorWords, correctWords } = createWeightedWordList();
             
-            // If no words in weighted list, fallback to random
+            // If no words in weighted list, fallback to random (excluding last shown word)
             if (weightedList.length === 0) {
-                const randomIndex = Math.floor(Math.random() * vocabulary.length);
-                return vocabulary[randomIndex];
+                const availableWords = vocabulary.filter(word => {
+                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableWords.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableWords.length);
+                    return availableWords[randomIndex];
+                } else {
+                    // If vocabulary only has one word, we must show it
+                    const randomIndex = Math.floor(Math.random() * vocabulary.length);
+                    return vocabulary[randomIndex];
+                }
             }
             
-            // Rule 3: After 9 consecutive error words, show a correct word
+            // Rule 3: After 9 consecutive error words, show a correct word (excluding last shown word)
             if (consecutiveErrorWords >= 9 && correctWords.length > 0) {
                 consecutiveErrorWords = 0; // Reset counter
-                const randomCorrectIndex = Math.floor(Math.random() * correctWords.length);
-                return correctWords[randomCorrectIndex];
+                
+                const availableCorrectWords = correctWords.filter(word => {
+                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableCorrectWords.length > 0) {
+                    const randomCorrectIndex = Math.floor(Math.random() * availableCorrectWords.length);
+                    return availableCorrectWords[randomCorrectIndex];
+                } else {
+                    // If all correct words are the last shown word, select from error words instead
+                    const errorWordsList = weightedList.filter(item => item.isErrorWord);
+                    if (errorWordsList.length > 0) {
+                        const availableErrorWords = errorWordsList.filter(item => {
+                            return !lastShownWord || generateWordKey(item.word) !== generateWordKey(lastShownWord);
+                        });
+                        
+                        if (availableErrorWords.length > 0) {
+                            const randomIndex = Math.floor(Math.random() * availableErrorWords.length);
+                            consecutiveErrorWords++;
+                            return availableErrorWords[randomIndex].word;
+                        }
+                    }
+                    // Last resort: return any correct word even if it's the last shown
+                    const randomCorrectIndex = Math.floor(Math.random() * correctWords.length);
+                    return correctWords[randomCorrectIndex];
+                }
             }
             
-            // Rule 2 & 4: Select from weighted list (prioritizing error words with higher frequency)
+            // Rule 2 & 4: Select from weighted list (prioritizing error words with higher frequency, excluding last shown word)
             const errorWordsList = weightedList.filter(item => item.isErrorWord);
             
             if (errorWordsList.length > 0) {
-                // Select an error word
-                const randomIndex = Math.floor(Math.random() * errorWordsList.length);
-                consecutiveErrorWords++;
-                return errorWordsList[randomIndex].word;
+                // Select an error word (excluding last shown word)
+                const availableErrorWords = errorWordsList.filter(item => {
+                    return !lastShownWord || generateWordKey(item.word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableErrorWords.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableErrorWords.length);
+                    consecutiveErrorWords++;
+                    return availableErrorWords[randomIndex].word;
+                } else {
+                    // All error words are the last shown word, select from correct words
+                    const availableCorrectWords = correctWords.filter(word => {
+                        return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                    });
+                    
+                    if (availableCorrectWords.length > 0) {
+                        consecutiveErrorWords = 0;
+                        const randomIndex = Math.floor(Math.random() * availableCorrectWords.length);
+                        return availableCorrectWords[randomIndex];
+                    } else {
+                        // Last resort: show the last shown word again (only happens with very few words)
+                        const randomIndex = Math.floor(Math.random() * errorWordsList.length);
+                        consecutiveErrorWords++;
+                        return errorWordsList[randomIndex].word;
+                    }
+                }
             } else {
-                // No error words available, select from correct words
-                consecutiveErrorWords = 0;
-                const randomIndex = Math.floor(Math.random() * correctWords.length);
-                return correctWords[randomIndex];
+                // No error words available, select from correct words (excluding last shown word)
+                const availableCorrectWords = correctWords.filter(word => {
+                    return !lastShownWord || generateWordKey(word) !== generateWordKey(lastShownWord);
+                });
+                
+                if (availableCorrectWords.length > 0) {
+                    consecutiveErrorWords = 0;
+                    const randomIndex = Math.floor(Math.random() * availableCorrectWords.length);
+                    return availableCorrectWords[randomIndex];
+                } else {
+                    // Last resort: show any correct word even if it's the last shown
+                    consecutiveErrorWords = 0;
+                    const randomIndex = Math.floor(Math.random() * correctWords.length);
+                    return correctWords[randomIndex];
+                }
             }
         }
 
@@ -961,6 +1052,9 @@
             isInReviewMode = false;
             reviewModeCorrectCounts = {};
             
+            // Reset last shown word tracker
+            lastShownWord = null;
+            
             initializeWordStats(); // Initialize per-word statistics
             document.getElementById('totalWords').textContent = vocabulary.length;
             showCurrentWord();
@@ -969,6 +1063,9 @@
         function showCurrentWord() {
             // Use new word selection rules
             const currentWord = selectNextWordByRules();
+            
+            // Update last shown word tracker
+            lastShownWord = currentWord;
             
             document.getElementById('englishWord').textContent = currentWord.english;
             document.getElementById('chineseText').textContent = currentWord.chinese;
