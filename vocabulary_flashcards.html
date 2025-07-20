@@ -1055,6 +1055,10 @@
             } else {
                 incorrectCount++;
                 wordStats[wordKey].incorrect++;
+                
+                // Set cooldown for incorrectly answered words to ensure they don't appear consecutively
+                // Cooldown of 3 means the word will skip the next 3 selections, ensuring at least 2 other words appear first
+                cooldown[wordKey] = 3;
             }
             
             // Move to next word
